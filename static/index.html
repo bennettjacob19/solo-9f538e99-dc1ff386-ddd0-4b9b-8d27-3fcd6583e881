@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>业务前缀换路演练台</title>
+<style>
+  :root { --bd:#d7dce3; --bg:#f5f7fa; --pri:#1f6feb; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.55 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:#1f2328; }
+  header { background:#0d1117; color:#fff; padding:14px 22px; display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header a { color:#79c0ff; text-decoration:none; font-size:13px; }
+  main { max-width:1180px; margin:0 auto; padding:18px; display:grid; grid-template-columns: 420px 1fr; gap:18px; }
+  @media (max-width: 980px){ main{ grid-template-columns:1fr; } }
+  .card { background:#fff; border:1px solid var(--bd); border-radius:10px; padding:14px 16px; }
+  textarea { width:100%; height:340px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; border:1px solid var(--bd); border-radius:8px; padding:10px; }
+  button { border:1px solid var(--pri); background:var(--pri); color:#fff; border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; margin:4px 6px 4px 0; }
+  button.secondary { background:#fff; color:var(--pri); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  select { width:100%; padding:7px; border:1px solid var(--bd); border-radius:8px; margin-bottom:8px; }
+  .muted { color:#656d76; font-size:12px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--bd); margin-right:6px; }
+  .badge.old { background:#fff8c5; border-color:#d4a72c55; } .badge.new { background:#dafbe1; border-color:#1a7f3755; }
+  .badge.closed { background:#ffebe9; } .badge.open { background:#ddf4ff; }
+  .tick { border:1px solid var(--bd); border-radius:10px; padding:10px 12px; margin:10px 0; }
+  .tick h4 { margin:0 0 6px; font-size:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  table { border-collapse:collapse; width:100%; font-size:12px; margin:6px 0; }
+  th,td { border:1px solid #e6e9ee; padding:3px 7px; text-align:left; }
+  .bar { height:8px; background:#eaeef2; border-radius:6px; overflow:hidden; width:120px; display:inline-block; vertical-align:middle; }
+  .bar > i { display:block; height:100%; background:var(--pri); }
+  .bar > i.full { background:var(--bad); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .hop { font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .violation { border-left:3px solid var(--bad); background:#fff5f5; padding:6px 10px; margin:6px 0; border-radius:0 8px 8px 0; font-size:13px; }
+  .traj { border-left:2px solid var(--bd); padding-left:10px; margin:6px 0; }
+  .traj .ev { font-size:12px; color:#3b424a; }
+  pre.diag { white-space:pre-wrap; background:#fff8c533; border:1px solid #d4a72c66; border-radius:8px; padding:10px; font-size:12.5px; }
+  .row-actions { display:flex; flex-wrap:wrap; align-items:center; }
+  #tickHost .tick.latest { outline:2px solid var(--pri); }
+</style>
+</head>
+<body>
+<header>
+  <h1>业务前缀换路 · 本地演练台</h1>
+  <a href="/docs" target="_blank">Swagger /docs（可直接填参执行）</a>
+  <a href="/redoc" target="_blank">ReDoc</a>
+  <a href="/health" target="_blank">/health</a>
+  <span style="flex:1"></span>
+  <span class="muted" style="color:#9da7b3">纯本地内存计算 · 不连真实设备</span>
+</header>
+
+<main>
+  <section class="card">
+    <label class="muted">预置场景</label>
+    <select id="fixtureSelect"></select>
+    <button class="secondary" id="loadFixture">载入到输入框</button>
+    <textarea id="body" spellcheck="false"></textarea>
+    <div class="row-actions">
+      <button id="runPlan">求解并一次逐拍执行</button>
+      <button class="secondary" id="createSession">建会话逐拍点</button>
+    </div>
+    <div class="row-actions">
+      <button class="secondary" id="stepBtn" disabled>下一拍 →</button>
+      <button class="secondary" id="runAllBtn" disabled>一次跑完剩余</button>
+      <span id="sessInfo" class="muted"></span>
+    </div>
+    <p class="muted">
+      拍内顺序：① 一条增/删/替换 → ② 入口控制 → ③ 到包 → ④ 开则放行（缺省全放）/关则缓冲 →
+      ⑤ 在网包按当拍实装表走一跳。详见 README。
+    </p>
+  </section>
+
+  <section id="output">
+    <div class="card" id="summaryCard"><span class="muted">选择场景后运行；也可直接到 <a href="/docs">/docs</a> 用 Swagger 执行。</span></div>
+    <div id="diag"></div>
+    <div id="controlsNote"></div>
+    <div id="ticks"></div>
+    <div class="card" id="trajCard" style="display:none;margin-top:14px"><h3 style="margin:0 0 8px">逐包轨迹</h3><div id="trajectories"></div></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let fixtures = {};
+let sessionId = null;
+let shownTicks = 0;
+
+async function loadFixtures(){
+  const d = await (await fetch('/api/v1/examples')).json();
+  fixtures = d.fixtures;
+  const names = {
+    feasible_dual:'有解·双版本共存', feasible_replace_wait:'有解·表容1等待替换',
+    buffer_boundary_ok:'有解·缓冲1错峰', buffer_zero_infeasible:'无解·缓冲0',
+    deadline_infeasible:'无解·期限不足', inflight_whatif:'What-if·在途包遇replace',
+    inflight_delete_whatif:'What-if·在途包遇delete'
+  };
+  const sel = $('fixtureSelect');
+  for (const [k,v] of Object.entries(fixtures)){
+    if (k.startsWith('inflight')) continue; // what-if 脚本请在 /docs 的 /api/v1/whatif 中使用
+    const o=document.createElement('option'); o.value=k; o.textContent=names[k]||k; sel.appendChild(o);
+  }
+  sel.value='feasible_dual'; $('body').value=JSON.stringify(fixtures.feasible_dual,null,2);
+}
+$('loadFixture').onclick = () => {
+  const k=$('fixtureSelect').value; const fx=fixtures[k];
+  $('body').value=JSON.stringify(k.startsWith('inflight')? fx.drill : fx, null, 2);
+  resetSession();
+};
+function resetSession(){
+  sessionId=null; shownTicks=0; $('stepBtn').disabled=true; $('runAllBtn').disabled=true; $('sessInfo').textContent='';
+  $('ticks').innerHTML=''; $('trajCard').style.display='none';
+}
+function parsed(){ return JSON.parse($('body').value); }
+
+function badgePlane(ing){
+  return `<span class="badge ${ing.plane}">${ing.plane==='new'?'新路平面':'旧路平面'}</span>`+
+         `<span class="badge ${ing.open?'open':'closed'}">${ing.open?'入口开':'入口关'}</span>`+
+         (ing.cutover_this_tick?'<span class="badge new">本拍切换</span>':'');
+}
+function tableHtml(t){
+  const rows=t.tables.map(x=>`<tr><td><b>${x.switch}</b></td>
+    <td>${x.entries.map(e=>`${e.nexthop==='DELIVER'?'目的地':e.nexthop}${e.serves_versions.length?` <span class='muted'>[${e.serves_versions.join('+')}]</span>`:''}`).join('；')||'<span class=muted>（空）</span>'}</td>
+    <td>${x.usage_zh} <span class="bar"><i class="${x.full?'full':''}" style="width:${100*x.used/Math.max(1,x.capacity)}%"></i></span></td></tr>`).join('');
+  return `<table><thead><tr><th>交换机</th><th>实装下一跳 [服务版本]</th><th>表项用/上限</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function tickCard(t, latest){
+  const hops=t.hops.map(h=>`<div class="hop">· ${h.packet_id} @${h.at_switch} → ${h.result==='delivered'?'<span class=ok>DELIVER 送达</span>':h.to_switch} <span class="muted">(${h.used_nexthop}, ${h.plane})</span></div>`).join('') || '<span class=muted>本拍无在网包转发</span>';
+  const rel=t.released.map(r=>`${r.packet_id}(${r.plane==='new'?'新':'旧'})`).join('、')||'—';
+  return `<div class="tick ${latest?'latest':''}" data-tick="${t.tick}">
+    <h4>第 ${t.tick} 拍 <span class="badge">${t.table_action.label_zh||t.table_action.kind}</span> ${badgePlane(t.ingress)} ${t.goal_reached?'<span class="badge new">目标达成</span>':''}</h4>
+    <div class="muted">到包：${t.arrivals.join('、')||'无'} ｜ 放行：${rel} ｜ 缓冲：${t.buffer.usage_zh} ${t.buffer.overflow?'<b class=bad>溢出!</b>':''} ｜ 本拍送达：${t.delivered_this_tick.join('、')||'无'}</div>
+    ${tableHtml(t)}
+    <div>${hops}</div>
+  </div>`;
+}
+function renderTrajectories(list){
+  if(!list || !list.length){ $('trajCard').style.display='none'; return; }
+  $('trajCard').style.display='';
+  $('trajectories').innerHTML = list.map(p=>{
+    const ev=p.events.map(e=>{
+      let txt=e.detail_zh||e.type;
+      if(e.type==='hop') txt=`${e.tick}拍 ${e.at_switch}→${e.to_switch}（${e.used_nexthop}）`;
+      if(e.type==='deliver') txt=`${e.tick}拍 @${e.at_switch} 送达`;
+      if(e.type==='release') txt=`${e.tick}拍 放行→${e.plane}路 [${(e.path||[]).join('→')}]`;
+      if(e.type==='arrival'||e.type==='buffered') txt=`${e.tick}拍 ${e.detail_zh}`;
+      if(e.type==='preinstalled_position') txt=`0拍 初始位于 ${e.switch}`;
+      return `<div class="ev">· ${txt}</div>`;
+    }).join('');
+    const cls=p.status==='delivered'?'ok':(p.status==='dropped'?'bad':'warn');
+    return `<div class="traj"><b>${p.packet_id}</b> <span class="${cls}">${p.status}</span>
+      <span class="muted">放行平面=${p.assigned_plane_at_release||'—'}，放行拍=${p.released_tick??'—'}，送达拍=${p.delivered_tick??'—'}</span>${ev}</div>`;
+  }).join('');
+}
+function renderDiagnosis(d){
+  if(!d){ $('diag').innerHTML=''; return; }
+  $('diag').innerHTML=`<div class="card" style="margin-top:14px;border-color:#d4a72c">
+    <h3 class="warn" style="margin:0 0 6px">无解 · 约束归因（旧表照用，未做改动）</h3>
+    <pre class="diag">${(d.reasons_zh||[]).map(x=>'• '+x).join('\n')}</pre>
+    <div class="muted">归因码：${(d.codes||[]).join(', ')} ｜ 纯传播最早第 ${d.earliest_propagation_tick} 拍 ｜ 最少表项操作 ${d.minimum_table_ops} 次</div>
+  </div>`;
+}
+function renderSummary(d){
+  const cls=d.status==='feasible'?'ok':'bad';
+  $('summaryCard').innerHTML=`<h3 class="${cls}" style="margin:0 0 6px">${d.status==='feasible'?'✅ 有解':'⛔ 无解'}</h3>
+    <div>${d.summary_zh||''}</div>
+    <div class="muted" style="margin-top:6px">搜索节点 ${d.search_nodes??'-'} ｜ 耗时 ${d.elapsed_ms??'-'} ms ${d.goal_tick?`｜ 目标拍 ${d.goal_tick}`:''}</div>`;
+}
+
+$('runPlan').onclick = async ()=>{
+  resetSession();
+  let body; try{ body=parsed(); }catch(e){ alert('JSON 解析失败: '+e); return; }
+  const r=await fetch('/api/v1/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){ alert('422/错误：\n'+JSON.stringify(d.errors||d.detail,null,2)); return; }
+  renderSummary(d); renderDiagnosis(d.diagnosis);
+  $('ticks').innerHTML=(d.ticks||[]).map(t=>tickCard(t,false)).join('');
+  renderTrajectories(d.packet_trajectories);
+};
+
+$('createSession').onclick = async ()=>{
+  resetSession();
+  let body; try{ body=parsed(); }catch(e){ alert('JSON 解析失败: '+e); return; }
+  const r=await fetch('/api/v1/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){ alert('建会话失败：'+JSON.stringify(d)); return; }
+  sessionId=d.session_id;
+  renderSummary({status:d.status,summary_zh:d.status==='feasible'?`会话 ${sessionId} 已建，计划 ${d.total_planned_ticks} 拍，点“下一拍”执行。`:'该配置无解，旧表照用。',search_nodes:d.search_nodes,elapsed_ms:d.elapsed_ms});
+  if(d.status==='infeasible'){ renderDiagnosis(d.diagnosis); return; }
+  $('stepBtn').disabled=false; $('runAllBtn').disabled=false;
+  $('sessInfo').textContent=`${sessionId} · 0/${d.total_planned_ticks}`;
+};
+async function doStep(){
+  const r=await fetch(`/api/v1/sessions/${sessionId}/step`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(!r.ok){ alert((await r.json()).detail); $('stepBtn').disabled=true; return; }
+  const d=await r.json();
+  $('ticks').insertAdjacentHTML('beforeend', tickCard(d.tick,true));
+  document.querySelectorAll('.tick.latest').forEach(e=>{ if(+e.dataset.tick!==d.executed_tick) e.classList.remove('latest'); });
+  shownTicks=d.executed_tick;
+  const total=+$('sessInfo').textContent.split('/')[1]||d.executed_tick;
+  $('sessInfo').textContent=`${sessionId} · ${shownTicks}/${total}`;
+  if(d.finished){
+    $('stepBtn').disabled=true; $('runAllBtn').disabled=true;
+    const full=await (await fetch(`/api/v1/sessions/${sessionId}`)).json();
+    renderTrajectories(full.packet_trajectories);
+  }
+}
+$('stepBtn').onclick=doStep;
+$('runAllBtn').onclick=async ()=>{
+  $('runAllBtn').disabled=true;
+  await fetch(`/api/v1/sessions/${sessionId}/run`,{method:'POST'});
+  const full=await (await fetch(`/api/v1/sessions/${sessionId}`)).json();
+  $('ticks').innerHTML=full.ticks.map(t=>tickCard(t,false)).join('');
+  renderTrajectories(full.packet_trajectories);
+  $('stepBtn').disabled=true;
+  $('sessInfo').textContent=`${sessionId} · ${full.executed_ticks}/${full.total_planned_ticks} 完成`;
+};
+loadFixtures();
+</script>
+</body>
+</html>
